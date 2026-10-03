@@ -44,8 +44,6 @@ input,select,textarea{font:inherit;width:100%;padding:7px 8px;border:1px solid v
 .mini{width:100%;font-size:13px;border-collapse:collapse;min-width:0}.mini td,.mini th{padding:5px 4px}
 details{margin-top:14px}summary{cursor:pointer;font-weight:500}
 .toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:8px 14px;border-radius:6px;display:none}
-#pinForm{display:none;max-width:320px;margin:60px auto}body.locked #pinForm{display:block}body.locked #sign{display:none}
-body.locked main,body.locked #add,body.locked #snap,body.locked #exp,body.locked #imp{display:none}
 @media(max-width:760px){.hero,.grid2{grid-template-columns:1fr}.f{grid-template-columns:1fr}main{padding:12px}}
 </style>
 </head>
@@ -53,15 +51,13 @@ body.locked main,body.locked #add,body.locked #snap,body.locked #exp,body.locked
 <header>
   <div><h1>Family Portfolio Ledger</h1><div class="sub" id="meta"></div></div>
   <div class="row">
-    <span class="sub" id="cloud"></span><button class="btn" id="sign">Lock</button>
-    <button class="btn pri" id="add">Add investment</button>
+    <span class="sub" id="cloud"></span><button class="btn pri" id="add">Add investment</button>
     <button class="btn" id="snap" title="Save today's total to the history chart">Save snapshot</button>
     <button class="btn" id="exp">Export</button>
     <button class="btn" id="imp">Import</button>
     <input type="file" id="file" accept=".json" hidden>
   </div>
 </header>
-<form id="pinForm" class="card"><h2 style="font-size:18px;margin-bottom:6px">Enter PIN</h2><p class="sub" style="margin:0 0 10px">This ledger is private.</p><label>PIN<input id="pin" type="password" inputmode="numeric" autocomplete="current-password" minlength="6" required></label><p class="neg" id="pinErr" role="alert" style="min-height:1.5em;margin:6px 0"></p><button class="btn pri" style="width:100%">Unlock</button></form>
 <main>
   <section class="hero" aria-label="Totals">
     <div class="card"><div class="lbl">Total value in EUR</div><div class="big" id="tTot"></div><div class="split" id="split"></div><div class="sub" id="splitL"></div></div>
@@ -217,33 +213,23 @@ render();
 </script>
 <script type="module">
 import {initializeApp} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
-import {getAuth,signInWithEmailAndPassword,onAuthStateChanged,signOut} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
 import {getFirestore,doc,getDoc,setDoc} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
-// 1) Paste your own values from Firebase console > Project settings > Your apps
-const cfg={apiKey:"AIzaSyB61_KogMjq12sXzV-N2DZZe2Bdos8I1ck",authDomain:"investments-1b36a.firebaseapp.com",projectId:"investments-1b36a",appId:"1:657796820130:web:dfa1dbff42beac61dbfbfb",loginEmail:"dwivedi.anshuman@gmail.com"}; // loginEmail: the shared account you create in step 3 of the setup
-const el=$('#cloud'),btn=$('#sign');
-if(cfg.apiKey.startsWith('PASTE')){el.textContent='Local mode: cloud not set up';btn.style.display='none'}
+// Paste your Firebase values here. Leave PASTE_API_KEY to run without the cloud (data stays in this browser).
+const cfg={apiKey:"PASTE_API_KEY",authDomain:"PASTE_PROJECT.firebaseapp.com",projectId:"PASTE_PROJECT_ID",appId:"PASTE_APP_ID"};
+// Replace with your own long random text. It acts as the address of your data, so keep it unguessable.
+const DOC="ledger-CHANGE-THIS-TO-A-LONG-RANDOM-TEXT";
+const el=$('#cloud');
+if(cfg.apiKey.startsWith('PASTE')){el.textContent='Local mode: cloud not set up'}
 else{
-  const app=initializeApp(cfg),auth=getAuth(app),db=getFirestore(app),ref=doc(db,'ledger','main');
-  document.body.classList.add('locked');
-  let ready=false,timer;
-  const push=async()=>{const data=JSON.stringify(getData()),meta={data,updated:Date.now(),by:auth.currentUser.email};
-    await setDoc(ref,meta);await setDoc(doc(db,'ledger_backups',today()),meta)}; // one backup per day
-  btn.onclick=()=>signOut(auth);
-  $('#pinForm').onsubmit=async e=>{e.preventDefault();const pin=$('#pin').value;$('#pinErr').textContent='';
-    try{await signInWithEmailAndPassword(auth,cfg.loginEmail,pin);$('#pin').value=''}
-    catch(x){$('#pinErr').textContent=x.code==='auth/too-many-requests'?'Too many attempts. Wait a few minutes and try again.':['auth/invalid-credential','auth/wrong-password','auth/invalid-login-credentials'].includes(x.code)?'Wrong PIN.':'Could not unlock ('+x.code+').'}};
-  onAuthStateChanged(auth,async u=>{
-    ready=false;
-    if(!u){el.textContent='Locked';document.body.classList.add('locked');return}
-    btn.textContent='Lock';el.textContent='Loading…';
-    try{const snap=await getDoc(ref);
-      if(snap.exists())setData(JSON.parse(snap.data().data));else await push(); // first sign-in uploads what is on this device
-      ready=true;document.body.classList.remove('locked');el.textContent='Unlocked · synced'}
-    catch(e){el.textContent='Cloud error: '+e.code;toast('Cannot reach the database ('+e.code+'). Check rules and approved emails.')}
-  });
+  const db=getFirestore(initializeApp(cfg)),ref=doc(db,'ledger',DOC);let ready=false,timer;
+  const push=async()=>{const m={data:JSON.stringify(getData()),updated:Date.now()};
+    await setDoc(ref,m);await setDoc(doc(db,'ledger',DOC+'-'+today()),m)}; // one backup per day
+  try{const snap=await getDoc(ref);
+    if(snap.exists())setData(JSON.parse(snap.data().data));else await push();
+    ready=true;el.textContent='Synced'}
+  catch(e){el.textContent='Cloud error';toast('Cannot reach the database ('+e.code+'). Check the rules.')}
   window.cloudSave=()=>{if(!ready)return;clearTimeout(timer);el.textContent='Saving…';
-    timer=setTimeout(async()=>{try{await push();el.textContent='Unlocked · saved'}catch(e){el.textContent='Not saved';toast('Cloud save failed ('+e.code+'). Export a backup.')}},800)};
+    timer=setTimeout(async()=>{try{await push();el.textContent='Saved'}catch(e){el.textContent='Not saved';toast('Cloud save failed ('+e.code+'). Export a backup.')}},800)};
 }
 </script>
 </body>
